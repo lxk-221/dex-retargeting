@@ -8,7 +8,9 @@ import cv2
 import numpy as np
 import tyro
 from loguru import logger
-
+from sapien.asset import create_dome_envmap
+from sapien.utils import Viewer
+import sapien
 from dex_retargeting.constants import (
     RobotName,
     RetargetingType,
@@ -24,10 +26,109 @@ from orca_core import OrcaHand
 import pyrealsense2 as rs
 
 
-def start_retargeting(queue: multiprocessing.Queue, robot_dir: str, config_path: str, orca_model_path: str, hand_type_str: str):
+class SapienVisualizer:
+    def __init__(self, retargeting, config_path):
+        sapien.render.set_viewer_shader_dir("default")
+        sapien.render.set_camera_shader_dir("default")
+
+        config = RetargetingConfig.load_from_file(config_path)
+
+        # Setup
+        scene = sapien.Scene()
+        render_mat = sapien.render.RenderMaterial()
+        render_mat.base_color = [0.06, 0.08, 0.12, 1]
+        render_mat.metallic = 0.0
+        render_mat.roughness = 0.9
+        render_mat.specular = 0.8
+        scene.add_ground(-0.2, render_material=render_mat, render_half_size=[1000, 1000])
+
+        # Lighting
+        scene.add_directional_light(np.array([1, 1, -1]), np.array([3, 3, 3]))
+        scene.add_point_light(np.array([2, 2, 2]), np.array([2, 2, 2]), shadow=False)
+        scene.add_point_light(np.array([2, -2, 2]), np.array([2, 2, 2]), shadow=False)
+        scene.set_environment_map(create_dome_envmap(sky_color=[0.2, 0.2, 0.2], ground_color=[0.2, 0.2, 0.2]))
+        scene.add_area_light_for_ray_tracing(
+            sapien.Pose([2, 1, 2], [0.707, 0, 0.707, 0]), np.array([1, 1, 1]), 5, 5
+        )
+
+        # Camera
+        cam = scene.add_camera(name="Cheese!", width=600, height=600, fovy=1, near=0.1, far=10)
+        cam.set_local_pose(sapien.Pose([0.5, 0, 0.0], [0, 0, 0, -1]))
+
+        self.viewer = Viewer()
+        self.viewer.set_scene(scene)
+        self.viewer.control_window.show_origin_frame = False
+        self.viewer.control_window.move_speed = 0.01
+        self.viewer.control_window.toggle_camera_lines(False)
+        self.viewer.set_camera_pose(cam.get_local_pose())
+
+        # Load robot and set it to a good pose to take picture
+        loader = scene.create_urdf_loader()
+        filepath = Path(config.urdf_path)
+        robot_name = filepath.stem
+        loader.load_multiple_collisions_from_file = True
+        if "ability" in robot_name:
+            loader.scale = 1.5
+        elif "dclaw" in robot_name:
+            loader.scale = 1.25
+        elif "allegro" in robot_name:
+            loader.scale = 1.4
+        elif "shadow" in robot_name:
+            loader.scale = 0.9
+        elif "bhand" in robot_name:
+            loader.scale = 1.5
+        elif "leap" in robot_name:
+            loader.scale = 1.4
+        elif "svh" in robot_name:
+            loader.scale = 1.5
+
+        if "glb" not in robot_name:
+            filepath = str(filepath).replace(".urdf", "_glb.urdf")
+        else:
+            filepath = str(filepath)
+
+        robot = loader.load(filepath)
+        self.robot = robot
+
+        if "ability" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.15]))
+        elif "shadow" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.2]))
+        elif "dclaw" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.15]))
+        elif "allegro" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.05]))
+        elif "bhand" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.2]))
+        elif "leap" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.15]))
+        elif "svh" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.13]))
+        elif "orca" in robot_name:
+            robot.set_pose(sapien.Pose([0, 0, -0.13]))
+        # Different robot loader may have different orders for joints
+        sapien_joint_names = [joint.get_name() for joint in robot.get_active_joints()]
+        retargeting_joint_names = retargeting.joint_names
+        self.retargeting_to_sapien = np.array(
+            [retargeting_joint_names.index(name) for name in sapien_joint_names]
+        ).astype(int)
+
+    def update(self, qpos):
+        self.robot.set_qpos(qpos[self.retargeting_to_sapien])
+    def render(self):
+        self.viewer.render()
+        self.viewer.render()
+
+def start_retargeting(
+    queue: multiprocessing.Queue, robot_dir: str, config_path: str, orca_model_path: str, hand_type_str: str, use_visualizer: bool
+):
     RetargetingConfig.set_default_urdf_dir(str(robot_dir))
     logger.info(f"Start retargeting with config {config_path}")
     retargeting = RetargetingConfig.load_from_file(config_path).build()
+
+    visualizer = None
+    if use_visualizer:
+        visualizer = SapienVisualizer(retargeting, config_path)
 
     # ================== OrcaHand Integration (START) ==================
     logger.info(f"Connecting to OrcaHand with model path: {orca_model_path}")
@@ -79,7 +180,10 @@ def start_retargeting(queue: multiprocessing.Queue, robot_dir: str, config_path:
         cv2.imshow("realtime_retargeting_demo", bgr)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
-
+        
+        if visualizer:
+            visualizer.render()
+        
         if joint_pos is None:
             logger.warning(f"{hand_type} hand is not detected.")
             continue
@@ -94,6 +198,9 @@ def start_retargeting(queue: multiprocessing.Queue, robot_dir: str, config_path:
             task_indices = indices[1, :]
             ref_value = joint_pos[task_indices, :] - joint_pos[origin_indices, :]
         qpos = retargeting.retarget(ref_value)
+
+        if visualizer:
+            visualizer.update(qpos)
 
         # send joint angles to OrcaHand
         joint_pos_dict = {}
@@ -174,6 +281,7 @@ def main(
     hand_type: HandType,
     orca_model_path: str,
     camera_path: Optional[str] = None,
+    use_visualizer: bool = False,
 ):
     """
     Detects the human hand pose from a video and translates the human pose trajectory into a robot pose trajectory.
@@ -184,6 +292,7 @@ def main(
         hand_type: Specifies which hand is being tracked, either left or right.
         orca_model_path: The path to the OrcaHand model directory.
         camera_path: the device path to feed to opencv to open the web camera. It will use 0 by default.
+        use_visualizer: Whether to show the SAPIEN visualizer.
     """
     # config that the path to urdf and yml which store the 
     # joints corresponding relationships between humanhand and robohand
@@ -197,7 +306,7 @@ def main(
         target=produce_frame, args=(queue, camera_path)
     )
     consumer_process = multiprocessing.Process(
-        target=start_retargeting, args=(queue, str(robot_dir), str(config_path), orca_model_path, hand_type.name)
+        target=start_retargeting, args=(queue, str(robot_dir), str(config_path), orca_model_path, hand_type.name, use_visualizer)
     )
 
     producer_process.start()
