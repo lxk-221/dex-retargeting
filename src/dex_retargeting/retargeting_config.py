@@ -194,7 +194,8 @@ class RetargetingConfig:
             if self.target_joint_names is not None
             else robot.dof_joint_names
         )
-
+        print("building optimizer ...")
+        print(f"scaling_factor: {self.scaling_factor}")
         if self.type == "position":
             optimizer = PositionOptimizer(
                 robot,

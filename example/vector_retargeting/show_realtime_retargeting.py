@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import sapien
 import tyro
+import pyrealsense2 as rs
 from loguru import logger
 from sapien.asset import create_dome_envmap
 from sapien.utils import Viewer
@@ -119,7 +120,15 @@ def start_retargeting(queue: multiprocessing.Queue, robot_dir: str, config_path:
 
     while True:
         try:
+            # First, a blocking get to wait for at least one frame.
             bgr = queue.get(timeout=5)
+
+            # Then, drain the queue of any older frames to get the most recent one
+            while not queue.empty():
+                try:
+                    bgr = queue.get_nowait()
+                except Empty:
+                    break  # The queue is empty, bgr is the latest frame
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         except Empty:
             logger.error(
@@ -153,17 +162,29 @@ def start_retargeting(queue: multiprocessing.Queue, robot_dir: str, config_path:
 
 
 def produce_frame(queue: multiprocessing.Queue, camera_path: Optional[str] = None):
-    if camera_path is None:
-        cap = cv2.VideoCapture(0)
-    else:
-        cap = cv2.VideoCapture(camera_path)
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 
-    while cap.isOpened():
-        success, image = cap.read()
-        time.sleep(1 / 30.0)
-        if not success:
-            continue
-        queue.put(image)
+    logger.info("Starting RealSense camera pipeline...")
+    try:
+        pipeline.start(config)
+    except Exception as e:
+        logger.error(f"Failed to start RealSense pipeline: {e}")
+        return
+
+    try:
+        while True:
+            frames = pipeline.wait_for_frames()
+            color_frame = frames.get_color_frame()
+            if not color_frame:
+                continue
+
+            image = np.asanyarray(color_frame.get_data())
+            queue.put(image)
+    finally:
+        pipeline.stop()
+        logger.info("RealSense camera pipeline stopped.")
 
 
 def main(
@@ -188,7 +209,7 @@ def main(
         Path(__file__).absolute().parent.parent.parent / "assets" / "robots" / "hands"
     )
 
-    queue = multiprocessing.Queue(maxsize=1000)
+    queue = multiprocessing.Queue(maxsize=2)
     producer_process = multiprocessing.Process(
         target=produce_frame, args=(queue, camera_path)
     )

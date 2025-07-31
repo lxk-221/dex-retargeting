@@ -1,0 +1,27 @@
+retargeting:
+  type: dexpilot
+  urdf_path: dexh13_hand/dexh13_right_glb.urdf
+
+  # Setting when use retargeting type "dexpilot"
+  wrist_link_name: "right_palm"
+  finger_tip_link_names: [ "right_thumb_link_3_tip", "right_index_link_3_tip", "right_middle_link_3_tip", "right_ring_link_3_tip"]
+  
+  # Setting when use retargeting type "vector"
+  #target_origin_link_names:
+  #  - "right_palm"
+  #  - "right_index_link_0"
+  #  - "right_middle_link_0"
+  #  - "right_ring_link_0"
+  #target_task_link_names:
+  #  - "right_thumb_link_3"
+  #  - "right_index_link_3"
+  #  - "right_middle_link_3"
+  #  - "right_ring_link_3"
+  # Source refers to the retargeting input, which usually corresponds to the human hand
+  # The joint indices of human hand joint which corresponds to each link in the target_link_names
+  #target_link_human_indices: [ [ 0, 5, 9, 13 ], [ 4, 8, 12, 16 ] ]
+
+  # Setting used all the time
+  scaling_factor: 1.5
+  # A smaller alpha means stronger filtering, i.e. more smooth but also larger latency
+  low_pass_alpha: 0.2 

@@ -223,9 +223,8 @@ class VectorOptimizer(Optimizer):
 
         # Computation cache for better performance
         # For one link used in multiple vectors, e.g. hand palm, we do not want to compute it multiple times
-        self.computed_link_names = list(
-            set(target_origin_link_names).union(set(target_task_link_names))
-        )
+        all_link_names = target_origin_link_names + target_task_link_names
+        self.computed_link_names = list(dict.fromkeys(all_link_names))
         self.origin_link_indices = torch.tensor(
             [self.computed_link_names.index(name) for name in target_origin_link_names]
         )
@@ -381,9 +380,8 @@ class DexPilotOptimizer(Optimizer):
 
         # Computation cache for better performance
         # For one link used in multiple vectors, e.g. hand palm, we do not want to compute it multiple times
-        self.computed_link_names = list(
-            set(target_origin_link_names).union(set(target_task_link_names))
-        )
+        all_link_names = target_origin_link_names + target_task_link_names
+        self.computed_link_names = list(dict.fromkeys(all_link_names))
         self.origin_link_indices = torch.tensor(
             [self.computed_link_names.index(name) for name in target_origin_link_names]
         )

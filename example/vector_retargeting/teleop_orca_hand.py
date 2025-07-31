@@ -21,7 +21,7 @@ from dex_retargeting.retargeting_config import RetargetingConfig
 from single_hand_detector import SingleHandDetector
 
 # Import OrcaHand class
-from orca_core import OrcaHand
+#from orca_core import OrcaHand
 
 import pyrealsense2 as rs
 
@@ -132,27 +132,27 @@ def start_retargeting(
 
     # ================== OrcaHand Integration (START) ==================
     logger.info(f"Connecting to OrcaHand with model path: {orca_model_path}")
-    hand = OrcaHand(model_path=orca_model_path)
-    status, msg = hand.connect()
-    if not status:
-        logger.error(f"Failed to connect to OrcaHand: {msg}")
-        return
+    #hand = OrcaHand(model_path=orca_model_path)
+    #status, msg = hand.connect()
+    #if not status:
+    #    logger.error(f"Failed to connect to OrcaHand: {msg}")
+    #    return
     
     # Set the control mode to a multi-turn mode to match calibration
-    hand.control_mode = 'current_based_position'
-    hand.init_joints()
-    logger.success("Successfully connected to and initialized OrcaHand.")
+    #hand.control_mode = 'current_based_position'
+    #hand.init_joints()
+    #logger.success("Successfully connected to and initialized OrcaHand.")
 
     # Create a mapping from the retargeting joint order to the OrcaHand joint name order
     retargeting_joint_names = retargeting.joint_names
-    orca_joint_names = hand.joint_ids
+    #orca_joint_names = hand.joint_ids
     
     # Ensure all OrcaHand joints can be found in the retargeting model by adding a prefix
-    expected_retargeting_joints = [f"{hand_type_str}_{name}" for name in orca_joint_names]
-    missing_joints = [name for name in expected_retargeting_joints if name not in retargeting_joint_names]
-    if missing_joints:
-        logger.error(f"Mismatch between retargeting model and OrcaHand joints. Missing in retargeting (URDF): {missing_joints}")
-        return
+    #expected_retargeting_joints = [f"{hand_type_str}_{name}" for name in orca_joint_names]
+    #missing_joints = [name for name in expected_retargeting_joints if name not in retargeting_joint_names]
+    #if missing_joints:
+    #    logger.error(f"Mismatch between retargeting model and OrcaHand joints. Missing in retargeting (URDF): {missing_joints}")
+    #    return
     # ================== OrcaHand Integration (END) ==================
     hand_type = "Right" if "right" in config_path.lower() else "Left"
     detector = SingleHandDetector(hand_type=hand_type, selfie=False)
@@ -189,6 +189,7 @@ def start_retargeting(
             continue
         
         retargeting_type = retargeting.optimizer.retargeting_type
+        logger.info(f"Retargeting type: {retargeting_type}")
         indices = retargeting.optimizer.target_link_human_indices
         if retargeting_type == "POSITION":
             indices = indices
@@ -204,13 +205,13 @@ def start_retargeting(
 
         # send joint angles to OrcaHand
         joint_pos_dict = {}
-        for name in orca_joint_names:
-            prefixed_name = f"{hand_type_str}_{name}"
+        #for name in orca_joint_names:
+            #prefixed_name = f"{hand_type_str}_{name}"
             # The check at the beginning ensures that the prefixed_name exists in retargeting_joint_names
-            rad_pos = qpos[retargeting_joint_names.index(prefixed_name)]
-            joint_pos_dict[name] = np.rad2deg(rad_pos)
+            #rad_pos = qpos[retargeting_joint_names.index(prefixed_name)]
+            #joint_pos_dict[name] = np.rad2deg(rad_pos)
         
-        hand.set_joint_pos(joint_pos_dict)
+        #hand.set_joint_pos(joint_pos_dict)
 
         # time recording
         loop_end_time = time.time()
@@ -243,9 +244,9 @@ def start_retargeting(
 
 
     # Disconnect from the hand when the loop is broken
-    if 'hand' in locals() and hand.is_connected():
-        hand.disconnect()
-        logger.info("Disconnected from OrcaHand.")
+    #if 'hand' in locals() and hand.is_connected():
+    #    hand.disconnect()
+    #    logger.info("Disconnected from OrcaHand.")
 
 
 def produce_frame(queue: multiprocessing.Queue, camera_path: Optional[str] = None):
